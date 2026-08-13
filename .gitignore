@@ -1,0 +1,19 @@
+# Python environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local databases and generated model artifacts
+*.db
+artifacts/models/*.pkl
+
+# Tool and editor files
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.idea/
+.vscode/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
