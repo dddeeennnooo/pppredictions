@@ -15,4 +15,8 @@ Base = declarative_base()
 
 
 def get_session():
+    # Import lazily to avoid a module cycle during engine construction.
+    from src.database.migrations import ensure_schema_compatibility
+
+    ensure_schema_compatibility()
     return SessionLocal()

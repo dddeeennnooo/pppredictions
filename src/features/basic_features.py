@@ -162,6 +162,7 @@ def build_basic_features(clear_existing: bool = True) -> int:
 
         feature_row = MatchFeatures(
             match_id=match.id,
+            competition=match.competition or "I1",
             season=match.season,
             date=match.date,
             home_team=match.home_team,

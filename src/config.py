@@ -7,5 +7,6 @@ RAW_DATA_DIR = DATA_DIR / "raw"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
 
 SERIE_A_RAW_DIR = RAW_DATA_DIR / "serie_a"
+LEAGUES_RAW_DIR = RAW_DATA_DIR / "leagues"
 
 DATABASE_URL = f"sqlite:///{BASE_DIR / 'football_predictor.db'}"

@@ -14,6 +14,8 @@ from src.models.train_logistic import FEATURE_COLUMNS
 
 MODEL_DIR = BASE_DIR / "artifacts" / "models"
 MODEL_PATH = MODEL_DIR / "logistic_btts_model.pkl"
+TEAM_PROBABILITY_LOW = 0.40
+TEAM_PROBABILITY_HIGH = 0.60
 
 
 def load_btts_training_dataset() -> pd.DataFrame:
@@ -72,19 +74,36 @@ def train_btts_model() -> dict:
     )
     model.fit(X_train, y_train)
 
-    y_pred = model.predict(X_test)
+    default_y_pred = model.predict(X_test)
     y_proba = model.predict_proba(X_test)
     majority_class = int(y_train.mode().iloc[0])
 
-    accuracy = accuracy_score(y_test, y_pred)
+    default_accuracy = accuracy_score(y_test, default_y_pred)
     baseline_accuracy = accuracy_score(
         y_test,
         [majority_class] * len(y_test),
     )
     loss = log_loss(y_test, y_proba, labels=model.classes_)
-    report = classification_report(
+
+    home_probability = test_df["implied_probability_home"]
+    away_probability = test_df["implied_probability_away"]
+    team_probability_y_pred = (
+        home_probability.between(
+            TEAM_PROBABILITY_LOW,
+            TEAM_PROBABILITY_HIGH,
+            inclusive="both",
+        )
+        & away_probability.between(
+            TEAM_PROBABILITY_LOW,
+            TEAM_PROBABILITY_HIGH,
+            inclusive="both",
+        )
+    ).astype(int)
+
+    team_probability_accuracy = accuracy_score(y_test, team_probability_y_pred)
+    team_probability_report = classification_report(
         y_test,
-        y_pred,
+        team_probability_y_pred,
         labels=[0, 1],
         target_names=["No", "Yes"],
         zero_division=0,
@@ -100,9 +119,14 @@ def train_btts_model() -> dict:
         "rows_test": len(test_df),
         "test_start_date": str(test_df.iloc[0]["date"]),
         "test_end_date": str(test_df.iloc[-1]["date"]),
-        "accuracy": accuracy,
+        "default_accuracy": default_accuracy,
+        "team_probability_accuracy": team_probability_accuracy,
+        "predicted_no_count": int((team_probability_y_pred == 0).sum()),
+        "predicted_yes_count": int((team_probability_y_pred == 1).sum()),
+        "team_probability_low": TEAM_PROBABILITY_LOW,
+        "team_probability_high": TEAM_PROBABILITY_HIGH,
         "baseline_accuracy": baseline_accuracy,
         "log_loss": loss,
-        "classification_report": report,
+        "classification_report": team_probability_report,
         "model_path": str(MODEL_PATH),
     }

@@ -2,7 +2,7 @@ from pathlib import Path
 import pandas as pd
 from sqlalchemy.exc import IntegrityError
 
-from src.config import SERIE_A_RAW_DIR, PROCESSED_DATA_DIR
+from src.config import SERIE_A_RAW_DIR, LEAGUES_RAW_DIR, PROCESSED_DATA_DIR
 from src.database.connection import get_session
 from src.database.models import Match
 
@@ -45,7 +45,7 @@ def _pick_first_existing(row, columns):
     return None
 
 
-def load_raw_serie_a_csv_files() -> pd.DataFrame:
+def load_raw_serie_a_csv_files(write_processed: bool = True) -> pd.DataFrame:
     csv_files = sorted(SERIE_A_RAW_DIR.glob("serie_a_*.csv"))
 
     if not csv_files:
@@ -64,19 +64,44 @@ def load_raw_serie_a_csv_files() -> pd.DataFrame:
 
         df = pd.read_csv(file_path)
         df["season"] = season
+        df["competition"] = "I1"
         frames.append(df)
 
     combined = pd.concat(frames, ignore_index=True)
 
-    PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    output_path = PROCESSED_DATA_DIR / "serie_a_combined.csv"
-    combined.to_csv(output_path, index=False)
+    if write_processed:
+        PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        output_path = PROCESSED_DATA_DIR / "serie_a_combined.csv"
+        combined.to_csv(output_path, index=False)
 
     return combined
 
 
-def import_matches_to_db() -> int:
-    df = load_raw_serie_a_csv_files()
+def load_raw_league_csv_files() -> pd.DataFrame:
+    """Load legacy Serie A plus any multi-league downloads without duplicates."""
+    frames = [load_raw_serie_a_csv_files(write_processed=False)]
+    for file_path in sorted(LEAGUES_RAW_DIR.glob("*/*.csv")):
+        parts = file_path.stem.split("_")
+        competition = parts[0].upper()
+        start_year = parts[-2]
+        end_year = parts[-1]
+        # The legacy Serie A directory is authoritative for I1.
+        if competition == "I1":
+            continue
+        frame = pd.read_csv(file_path)
+        frame["season"] = f"{start_year}/{end_year}"
+        frame["competition"] = competition
+        frames.append(frame)
+
+    return pd.concat(frames, ignore_index=True)
+
+
+def import_matches_to_db(include_all_leagues: bool = False) -> int:
+    df = (
+        load_raw_league_csv_files()
+        if include_all_leagues
+        else load_raw_serie_a_csv_files()
+    )
 
     session = get_session()
     imported_count = 0
@@ -103,6 +128,7 @@ def import_matches_to_db() -> int:
         odds_under_25 = _pick_first_existing(row, ["Avg<2.5", "B365<2.5"])
 
         match = Match(
+            competition=str(row.get("competition", "I1")),
             season=row["season"],
             date=match_date,
             home_team=str(home_team),
