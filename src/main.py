@@ -510,10 +510,16 @@ def train_advanced_btts():
 
 
 @app.command()
-def train_weekly_btts(decision_policy: str = "rank"):
+def train_weekly_btts(
+    decision_policy: str = "rank",
+    include_market_residual: bool = False,
+):
     """Retrain after each match week and backtest the latest season."""
     console.print("[yellow]Building week-safe features and selecting a model...[/yellow]")
-    result = train_weekly_btts_model(decision_policy=decision_policy)
+    result = train_weekly_btts_model(
+        decision_policy=decision_policy,
+        include_market_residual=include_market_residual,
+    )
     console.print(
         f"[green]Weekly BTTS backtest complete for {result['test_season']}.[/green]"
     )

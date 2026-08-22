@@ -49,6 +49,7 @@ METADATA_COLUMNS = {
     "home_team",
     "away_team",
     "target_btts",
+    "market_btts_proxy_probability",
 }
 
 
@@ -1030,7 +1031,10 @@ def _weekly_rank_predictions(
     return predictions, thresholds
 
 
-def train_weekly_btts_model(decision_policy: str = "rank") -> dict:
+def train_weekly_btts_model(
+    decision_policy: str = "rank",
+    include_market_residual: bool = False,
+) -> dict:
     """Select a statistic combination, predict, then learn after every week."""
     if decision_policy not in {"rank", "threshold"}:
         raise ValueError("decision_policy must be 'rank' or 'threshold'.")
@@ -1102,16 +1106,19 @@ def train_weekly_btts_model(decision_policy: str = "rank") -> dict:
     validation_probabilities["mean_ensemble"] = np.mean(
         list(validation_probabilities.values()), axis=0
     )
-    compact_probabilities = validation_probabilities["compact_btts_form"]
-    market_probabilities = validation["market_btts_proxy_probability"].to_numpy()
-    for model_weight in (0.25, 0.50, 0.75):
-        validation_probabilities[f"market_residual_{model_weight:.2f}"] = (
-            logit_market_blend(
-                compact_probabilities,
-                market_probabilities,
-                model_weight,
+    if include_market_residual:
+        compact_probabilities = validation_probabilities["compact_btts_form"]
+        market_probabilities = validation[
+            "market_btts_proxy_probability"
+        ].to_numpy()
+        for model_weight in (0.25, 0.50, 0.75):
+            validation_probabilities[f"market_residual_{model_weight:.2f}"] = (
+                logit_market_blend(
+                    compact_probabilities,
+                    market_probabilities,
+                    model_weight,
+                )
             )
-        )
     rank_results = []
     for name, probabilities in validation_probabilities.items():
         for fraction in np.arange(0.35, 0.751, 0.025):
@@ -1331,6 +1338,7 @@ def train_weekly_btts_model(decision_policy: str = "rank") -> dict:
         "models": final_models,
         "probability_calibrator": probability_calibrator,
         "decision_policy": decision_policy,
+        "include_market_residual": include_market_residual,
         "component_names": list(feature_sets),
         "feature_sets": feature_sets,
         "feature_columns": feature_columns,
