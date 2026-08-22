@@ -509,10 +509,10 @@ def train_advanced_btts():
 
 
 @app.command()
-def train_weekly_btts():
+def train_weekly_btts(decision_policy: str = "rank"):
     """Retrain after each match week and backtest the latest season."""
     console.print("[yellow]Building week-safe features and selecting a model...[/yellow]")
-    result = train_weekly_btts_model()
+    result = train_weekly_btts_model(decision_policy=decision_policy)
     console.print(
         f"[green]Weekly BTTS backtest complete for {result['test_season']}.[/green]"
     )
@@ -525,6 +525,11 @@ def train_weekly_btts():
             f"Rank rule: {result['rank_probability_source']}, "
             f"top {result['rank_fraction']:.1%} per "
             f"{'competition/week' if result['rank_by_competition'] else 'week'}"
+        )
+    elif result["selected_model"] == "calibrated_probability_threshold":
+        console.print(
+            f"No-quota threshold rule: {result['rank_probability_source']}, "
+            f"mode={result['threshold_mode']}"
         )
     elif result["selected_model"] == "calibrated_week_rank_schedule":
         console.print(
@@ -544,7 +549,7 @@ def train_weekly_btts():
             f"accuracy={week['accuracy']:.2%}, "
             f"target={'YES' if week['target_met'] else 'NO'}, "
             f"stats={week['selected_combination']}, "
-            f"top={week['rank_fraction']:.1%}, "
+            f"policy={week['decision_policy']}, "
             f"cumulative={week['cumulative_accuracy']:.2%}, "
             f"training_rows={week['training_rows']}"
         )

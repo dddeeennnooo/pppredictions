@@ -1020,8 +1020,10 @@ def _weekly_rank_predictions(
     return predictions, thresholds
 
 
-def train_weekly_btts_model() -> dict:
+def train_weekly_btts_model(decision_policy: str = "rank") -> dict:
     """Select a statistic combination, predict, then learn after every week."""
+    if decision_policy not in {"rank", "threshold"}:
+        raise ValueError("decision_policy must be 'rank' or 'threshold'.")
     target_accuracy = 0.60
     df = build_weekly_btts_dataset()
     if df.empty:
@@ -1125,6 +1127,18 @@ def train_weekly_btts_model() -> dict:
     selected_rank_fraction = best_rank["fraction"]
     selected_rank_by_competition = best_rank["by_competition"]
     best_metrics = best_rank["metrics"]
+    if decision_policy == "threshold":
+        selected_probability_source = max(
+            feature_sets,
+            key=lambda name: (
+                candidate_calibration[name]["metrics"]["overall_accuracy"],
+                candidate_calibration[name]["metrics"]["mean_week_accuracy"],
+                candidate_calibration[name]["metrics"]["weeks_at_target"],
+            ),
+        )
+        best_metrics = candidate_calibration[selected_probability_source]["metrics"]
+        selected_rank_fraction = np.nan
+        selected_rank_by_competition = False
     probability_calibrator = PlattProbabilityCalibrator().fit(
         validation_probabilities[selected_probability_source],
         validation["target_btts"],
@@ -1182,12 +1196,17 @@ def train_weekly_btts_model() -> dict:
             probabilities = candidate_outputs[selected_name]["probabilities"]
         raw_probabilities = probabilities.copy()
         probabilities = probability_calibrator.transform(probabilities)
-        predictions, thresholds = _weekly_rank_predictions(
-            week_test,
-            probabilities,
-            rank_rule["fraction"],
-            by_competition=rank_rule["by_competition"],
-        )
+        if decision_policy == "rank":
+            predictions, thresholds = _weekly_rank_predictions(
+                week_test,
+                probabilities,
+                rank_rule["fraction"],
+                by_competition=rank_rule["by_competition"],
+            )
+        else:
+            selected_output = candidate_outputs[selected_name]
+            predictions = selected_output["predictions"]
+            thresholds = np.full(len(week_test), selected_output["threshold"])
         targets = week_test["target_btts"].astype(int).to_numpy()
         for name, output in candidate_outputs.items():
             candidate_week_scores[name].append(
@@ -1227,6 +1246,7 @@ def train_weekly_btts_model() -> dict:
                 "training_rows": len(pretest)
                 + int((test["match_week"] < week).sum()),
                 "selected_combination": selected_name,
+                "decision_policy": decision_policy,
                 "rank_fraction": rank_rule["fraction"],
                 "rank_by_competition": rank_rule["by_competition"],
             }
@@ -1283,6 +1303,7 @@ def train_weekly_btts_model() -> dict:
     artifact = {
         "models": final_models,
         "probability_calibrator": probability_calibrator,
+        "decision_policy": decision_policy,
         "component_names": list(feature_sets),
         "feature_sets": feature_sets,
         "feature_columns": feature_columns,
@@ -1316,10 +1337,18 @@ def train_weekly_btts_model() -> dict:
         "test_season": test_season,
         "validation_rows": len(validation),
         "test_rows": len(test),
-        "selected_model": "calibrated_weekly_rank",
+        "selected_model": (
+            "calibrated_weekly_rank"
+            if decision_policy == "rank"
+            else "calibrated_probability_threshold"
+        ),
         "component_names": list(feature_sets),
         "selected_threshold": None,
-        "threshold_mode": "weekly_probability_rank",
+        "threshold_mode": (
+            "weekly_probability_rank"
+            if decision_policy == "rank"
+            else candidate_calibration[selected_probability_source]["mode"]
+        ),
         "target_accuracy": target_accuracy,
         "rank_probability_source": selected_probability_source,
         "rank_fraction": selected_rank_fraction,
