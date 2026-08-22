@@ -1,4 +1,5 @@
 import typer
+import pandas as pd
 from collections import Counter
 from datetime import date as Date
 from rich.console import Console
@@ -29,6 +30,8 @@ from src.models.train_weekly_btts import train_weekly_btts_model
 from src.models.train_monthly_btts import train_monthly_btts_model
 from src.models.train_dixon_coles_btts import train_dixon_coles_btts_model
 from src.models.btts_market_benchmark import evaluate_closing_market_benchmark
+from src.backtesting.btts_evaluation import audit_prediction_frame
+from src.config import BASE_DIR
 from src.importers.sportmonks_importer import (
     import_sportmonks_enrichment,
     import_sportmonks_transfers,
@@ -620,6 +623,26 @@ def benchmark_btts_market():
             f"{league['competition']}: {league['accuracy']:.4f} "
             f"({league['matches']} matches)"
         )
+
+
+@app.command("audit-weekly-btts")
+def audit_weekly_btts():
+    """Audit the saved weekly predictions with proper scores and uncertainty."""
+    path = BASE_DIR / "artifacts" / "predictions" / "weekly_btts_predictions.csv"
+    result = audit_prediction_frame(pd.read_csv(path))
+    interval = result["accuracy_lift"]
+    console.print(f"[green]Weekly BTTS audit ({result['matches']} matches)[/green]")
+    console.print(f"Accuracy: {result['accuracy']:.4f}")
+    console.print(f"Majority baseline: {result['baseline_accuracy']:.4f}")
+    console.print(
+        f"Accuracy lift: {interval['lift']:+.4f} "
+        f"(95% week-block CI {interval['lower_95']:+.4f} to "
+        f"{interval['upper_95']:+.4f})"
+    )
+    console.print(f"Log loss: {result['log_loss']:.4f}")
+    console.print(f"Brier score: {result['brier_score']:.4f}")
+    console.print(f"AUC: {result['auc']:.4f}")
+    console.print(f"Calibration error: {result['calibration_error']:.4f}")
 
 
 @app.command()
