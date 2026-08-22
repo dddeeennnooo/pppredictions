@@ -49,6 +49,13 @@ class Match(Base):
     odds_over_25 = Column(Float, nullable=True)
     odds_under_25 = Column(Float, nullable=True)
 
+    # Closing prices are benchmarks only; do not use them for earlier predictions.
+    odds_home_win_close = Column(Float, nullable=True)
+    odds_draw_close = Column(Float, nullable=True)
+    odds_away_win_close = Column(Float, nullable=True)
+    odds_over_25_close = Column(Float, nullable=True)
+    odds_under_25_close = Column(Float, nullable=True)
+
     __table_args__ = (
         UniqueConstraint(
             "season",

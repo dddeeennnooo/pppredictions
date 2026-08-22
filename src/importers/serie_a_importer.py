@@ -126,6 +126,15 @@ def import_matches_to_db(include_all_leagues: bool = False) -> int:
 
         odds_over_25 = _pick_first_existing(row, ["Avg>2.5", "B365>2.5"])
         odds_under_25 = _pick_first_existing(row, ["Avg<2.5", "B365<2.5"])
+        odds_home_close = _pick_first_existing(row, ["AvgCH", "PSCH", "B365CH"])
+        odds_draw_close = _pick_first_existing(row, ["AvgCD", "PSCD", "B365CD"])
+        odds_away_close = _pick_first_existing(row, ["AvgCA", "PSCA", "B365CA"])
+        odds_over_25_close = _pick_first_existing(
+            row, ["AvgC>2.5", "B365C>2.5"]
+        )
+        odds_under_25_close = _pick_first_existing(
+            row, ["AvgC<2.5", "B365C<2.5"]
+        )
 
         match = Match(
             competition=str(row.get("competition", "I1")),
@@ -164,6 +173,11 @@ def import_matches_to_db(include_all_leagues: bool = False) -> int:
 
             odds_over_25=_safe_float(odds_over_25),
             odds_under_25=_safe_float(odds_under_25),
+            odds_home_win_close=_safe_float(odds_home_close),
+            odds_draw_close=_safe_float(odds_draw_close),
+            odds_away_win_close=_safe_float(odds_away_close),
+            odds_over_25_close=_safe_float(odds_over_25_close),
+            odds_under_25_close=_safe_float(odds_under_25_close),
         )
 
         try:

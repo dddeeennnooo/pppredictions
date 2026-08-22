@@ -22,6 +22,21 @@ def ensure_schema_compatibility() -> None:
                 connection.execute(
                     text("ALTER TABLE matches ADD COLUMN match_week INTEGER")
                 )
+            closing_odds = {
+                "odds_home_win_close": "FLOAT",
+                "odds_draw_close": "FLOAT",
+                "odds_away_win_close": "FLOAT",
+                "odds_over_25_close": "FLOAT",
+                "odds_under_25_close": "FLOAT",
+            }
+            for column_name, column_type in closing_odds.items():
+                if column_name not in columns:
+                    connection.execute(
+                        text(
+                            f"ALTER TABLE matches ADD COLUMN "
+                            f"{column_name} {column_type}"
+                        )
+                    )
             connection.execute(
                 text(
                     "CREATE INDEX IF NOT EXISTS "

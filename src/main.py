@@ -28,6 +28,7 @@ from src.models.train_advanced_btts import train_advanced_btts_model
 from src.models.train_weekly_btts import train_weekly_btts_model
 from src.models.train_monthly_btts import train_monthly_btts_model
 from src.models.train_dixon_coles_btts import train_dixon_coles_btts_model
+from src.models.btts_market_benchmark import evaluate_closing_market_benchmark
 from src.importers.sportmonks_importer import (
     import_sportmonks_enrichment,
     import_sportmonks_transfers,
@@ -595,6 +596,24 @@ def train_dixon_coles_btts():
     console.print(f"Majority baseline: {result['baseline_accuracy']:.4f}")
     console.print(f"Log loss: {result['test_log_loss']:.4f}")
     console.print(f"Brier score: {result['test_brier_score']:.4f}")
+
+
+@app.command("benchmark-btts-market")
+def benchmark_btts_market():
+    """Benchmark BTTS against closing 1X2 and totals prices."""
+    result = evaluate_closing_market_benchmark()
+    console.print(
+        f"[green]Closing-market benchmark for {result['test_season']}[/green]"
+    )
+    console.print(f"Matches: {result['rows']}")
+    console.print(f"Accuracy: {result['accuracy']:.4f}")
+    console.print(f"Log loss: {result['log_loss']:.4f}")
+    console.print(f"Brier score: {result['brier_score']:.4f}")
+    for league in result["by_competition"]:
+        console.print(
+            f"{league['competition']}: {league['accuracy']:.4f} "
+            f"({league['matches']} matches)"
+        )
 
 
 @app.command()
