@@ -558,6 +558,11 @@ def train_weekly_btts():
     console.print(f"Final accuracy: {result['test_accuracy']:.4f}")
     console.print(f"Majority baseline: {result['baseline_accuracy']:.4f}")
     console.print(f"Log loss: {result['test_log_loss']:.4f}")
+    console.print(f"Brier score: {result['test_brier_score']:.4f}")
+    console.print(
+        f"Expected calibration error: "
+        f"{result['test_calibration_error']:.4f}"
+    )
     console.print(f"Predicted No: {result['predicted_no']}")
     console.print(f"Predicted Yes: {result['predicted_yes']}")
     console.print(f"Predictions: {result['predictions_path']}")

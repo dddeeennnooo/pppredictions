@@ -10,13 +10,22 @@ from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifie
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.linear_model import SGDClassifier
-from sklearn.metrics import accuracy_score, classification_report, log_loss
+from sklearn.metrics import (
+    accuracy_score,
+    brier_score_loss,
+    classification_report,
+    log_loss,
+)
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sqlalchemy import text
 
 from src.config import BASE_DIR
 from src.database.connection import Base, engine, get_session
+from src.models.probability_calibration import (
+    PlattProbabilityCalibrator,
+    expected_calibration_error,
+)
 
 
 MODEL_PATH = BASE_DIR / "artifacts" / "models" / "weekly_btts_model.pkl"
@@ -1116,6 +1125,10 @@ def train_weekly_btts_model() -> dict:
     selected_rank_fraction = best_rank["fraction"]
     selected_rank_by_competition = best_rank["by_competition"]
     best_metrics = best_rank["metrics"]
+    probability_calibrator = PlattProbabilityCalibrator().fit(
+        validation_probabilities[selected_probability_source],
+        validation["target_btts"],
+    )
 
     prediction_frames = []
     weekly_rows = []
@@ -1167,6 +1180,8 @@ def train_weekly_btts_model() -> dict:
             )
         else:
             probabilities = candidate_outputs[selected_name]["probabilities"]
+        raw_probabilities = probabilities.copy()
+        probabilities = probability_calibrator.transform(probabilities)
         predictions, thresholds = _weekly_rank_predictions(
             week_test,
             probabilities,
@@ -1192,6 +1207,7 @@ def train_weekly_btts_model() -> dict:
             cumulative_targets, cumulative_predictions
         )
 
+        week_test["raw_btts_probability"] = raw_probabilities
         week_test["btts_probability"] = probabilities
         week_test["decision_threshold"] = thresholds
         week_test["selected_combination"] = selected_name
@@ -1227,6 +1243,8 @@ def train_weekly_btts_model() -> dict:
         y_test, np.full(len(y_test), baseline_class)
     )
     test_loss = log_loss(y_test, y_probability, labels=[0, 1])
+    test_brier = brier_score_loss(y_test, y_probability)
+    test_calibration_error = expected_calibration_error(y_test, y_probability)
     weeks_at_target = int(weekly_summary["target_met"].sum())
     worst_week_accuracy = float(weekly_summary["accuracy"].min())
     worst_weeks = weekly_summary.loc[
@@ -1243,6 +1261,7 @@ def train_weekly_btts_model() -> dict:
         "date",
         "home_team",
         "away_team",
+        "raw_btts_probability",
         "btts_probability",
         "decision_threshold",
         "selected_combination",
@@ -1263,6 +1282,7 @@ def train_weekly_btts_model() -> dict:
     MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     artifact = {
         "models": final_models,
+        "probability_calibrator": probability_calibrator,
         "component_names": list(feature_sets),
         "feature_sets": feature_sets,
         "feature_columns": feature_columns,
@@ -1335,6 +1355,8 @@ def train_weekly_btts_model() -> dict:
         "test_accuracy": test_accuracy,
         "baseline_accuracy": baseline_accuracy,
         "test_log_loss": test_loss,
+        "test_brier_score": test_brier,
+        "test_calibration_error": test_calibration_error,
         "predicted_no": int((y_pred == 0).sum()),
         "predicted_yes": int((y_pred == 1).sum()),
         "classification_report": report,
