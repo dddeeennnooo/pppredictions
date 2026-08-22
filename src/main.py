@@ -27,6 +27,7 @@ from src.models.train_team_scoring import train_team_scoring_models
 from src.models.train_advanced_btts import train_advanced_btts_model
 from src.models.train_weekly_btts import train_weekly_btts_model
 from src.models.train_monthly_btts import train_monthly_btts_model
+from src.models.train_dixon_coles_btts import train_dixon_coles_btts_model
 from src.importers.sportmonks_importer import (
     import_sportmonks_enrichment,
     import_sportmonks_transfers,
@@ -570,6 +571,25 @@ def train_weekly_btts():
     console.print(f"Model: {result['model_path']}")
     console.print("")
     console.print(result["classification_report"])
+
+
+@app.command("train-dixon-coles-btts")
+def train_dixon_coles_btts():
+    """Fit and evaluate a time-decayed Dixon-Coles BTTS model."""
+    console.print("[yellow]Training Dixon-Coles BTTS model...[/yellow]")
+    result = train_dixon_coles_btts_model()
+    console.print(
+        f"[green]Dixon-Coles backtest complete for {result['test_season']}.[/green]"
+    )
+    console.print(
+        f"Selected half-life={result['half_life_days']:.0f} days, "
+        f"threshold={result['threshold']:.2f}"
+    )
+    console.print(f"Validation accuracy: {result['validation_accuracy']:.4f}")
+    console.print(f"Test accuracy: {result['test_accuracy']:.4f}")
+    console.print(f"Majority baseline: {result['baseline_accuracy']:.4f}")
+    console.print(f"Log loss: {result['test_log_loss']:.4f}")
+    console.print(f"Brier score: {result['test_brier_score']:.4f}")
 
 
 @app.command()
