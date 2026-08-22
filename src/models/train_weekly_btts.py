@@ -26,6 +26,10 @@ from src.models.probability_calibration import (
     PlattProbabilityCalibrator,
     expected_calibration_error,
 )
+from src.models.market_residual import (
+    logit_market_blend,
+    opening_market_btts_proxy,
+)
 
 
 MODEL_PATH = BASE_DIR / "artifacts" / "models" / "weekly_btts_model.pkl"
@@ -456,6 +460,12 @@ def _build_weekly_features(
                     "market_away_probability": p_away,
                     "market_strength_gap": abs(p_home - p_away),
                     "market_over_25_probability": _over_probability(row),
+                    "market_btts_proxy_probability": opening_market_btts_proxy(
+                        p_home,
+                        p_draw,
+                        p_away,
+                        _over_probability(row),
+                    ),
                     "has_over_25_market": int(
                         not pd.isna(row.odds_over_25)
                         and not pd.isna(row.odds_under_25)
@@ -1092,6 +1102,16 @@ def train_weekly_btts_model(decision_policy: str = "rank") -> dict:
     validation_probabilities["mean_ensemble"] = np.mean(
         list(validation_probabilities.values()), axis=0
     )
+    compact_probabilities = validation_probabilities["compact_btts_form"]
+    market_probabilities = validation["market_btts_proxy_probability"].to_numpy()
+    for model_weight in (0.25, 0.50, 0.75):
+        validation_probabilities[f"market_residual_{model_weight:.2f}"] = (
+            logit_market_blend(
+                compact_probabilities,
+                market_probabilities,
+                model_weight,
+            )
+        )
     rank_results = []
     for name, probabilities in validation_probabilities.items():
         for fraction in np.arange(0.35, 0.751, 0.025):
@@ -1191,6 +1211,13 @@ def train_weekly_btts_model(decision_policy: str = "rank") -> dict:
                     for output in candidate_outputs.values()
                 ],
                 axis=0,
+            )
+        elif selected_name.startswith("market_residual_"):
+            model_weight = float(selected_name.rsplit("_", 1)[1])
+            probabilities = logit_market_blend(
+                candidate_outputs["compact_btts_form"]["probabilities"],
+                week_test["market_btts_proxy_probability"].to_numpy(),
+                model_weight,
             )
         else:
             probabilities = candidate_outputs[selected_name]["probabilities"]
