@@ -78,6 +78,22 @@ version represents a prediction made after official team news is available.
 The local SQLite database, virtual environment, and generated model artifacts are
 excluded from version control.
 
+## Predict an upcoming fixture
+
+Build a new pre-match feature row from completed results strictly before the
+fixture date, retrain odds-free models on that history, and predict 1/X/2, double
+chance, BTTS, over/under 2.5, and each team to score:
+
+```powershell
+python -m src.main predict-upcoming "Udinese" "Como" 2026-08-22 --competition I1
+```
+
+Unlike the older `predict-match` historical test command, `predict-upcoming` does
+not reuse an earlier head-to-head feature row and does not require bookmaker odds.
+Matches on the prediction date and later are excluded from both feature generation
+and model training. The command reports the most recent result date it used so the
+data cutoff is visible in every prediction.
+
 ## Additional leagues
 
 Download and import Serie A, Premier League, Bundesliga, La Liga, and Ligue 1:

@@ -20,6 +20,7 @@ from src.importers.open_btts_data_importer import import_open_btts_data
 from src.features.basic_features import build_basic_features
 from src.models.train_logistic import train_logistic_model
 from src.models.predict_logistic import predict_match_by_teams
+from src.models.predict_upcoming import predict_upcoming_match
 from src.models.evaluate_draw_rule import evaluate_draw_rule
 from src.models.train_btts import train_btts_model
 from src.models.train_team_scoring import train_team_scoring_models
@@ -629,6 +630,70 @@ def predict_match(
     console.print(f"Home win: {probabilities.get('H', 0) * 100:.2f}%")
     console.print(f"Draw: {probabilities.get('D', 0) * 100:.2f}%")
     console.print(f"Away win: {probabilities.get('A', 0) * 100:.2f}%")    
+
+
+@app.command()
+def predict_upcoming(
+    home_team: str,
+    away_team: str,
+    fixture_date: str,
+    competition: str = "I1",
+):
+    """Predict an unplayed fixture using only completed earlier matches."""
+    prediction_date = Date.fromisoformat(fixture_date)
+    result = predict_upcoming_match(
+        home_team=home_team,
+        away_team=away_team,
+        fixture_date=prediction_date,
+        competition=competition,
+    )
+    probabilities = result["probabilities"]
+    validation = result["validation_accuracy"]
+    home_form = result["form"]["home"]
+    away_form = result["form"]["away"]
+
+    console.print(
+        f"[cyan]{result['home_team']} vs {result['away_team']}[/cyan] "
+        f"({result['fixture_date']}, {result['competition']})"
+    )
+    console.print(
+        f"Training: {result['training_matches']} completed matches; "
+        f"data through {result['data_through']}"
+    )
+    console.print(
+        "Chronological holdout accuracy: "
+        f"1/X/2 {validation['result']:.2%}, "
+        f"BTTS {validation['btts']:.2%}, "
+        f"O/U 2.5 {validation['over_25']:.2%}"
+    )
+    console.print(
+        f"Recent form (last 5): {result['home_team']} "
+        f"{home_form['points']:.2f} PPG, "
+        f"{home_form['goals_for']:.2f} GF, {home_form['goals_against']:.2f} GA; "
+        f"{result['away_team']} {away_form['points']:.2f} PPG, "
+        f"{away_form['goals_for']:.2f} GF, {away_form['goals_against']:.2f} GA"
+    )
+    console.print("[yellow]1/X/2[/yellow]")
+    console.print(f"Home win: {probabilities['home_win']:.2%}")
+    console.print(f"Draw: {probabilities['draw']:.2%}")
+    console.print(f"Away win: {probabilities['away_win']:.2%}")
+    console.print("[yellow]Double chance[/yellow]")
+    console.print(f"1X: {probabilities['home_or_draw']:.2%}")
+    console.print(f"X2: {probabilities['draw_or_away']:.2%}")
+    console.print(f"12: {probabilities['home_or_away']:.2%}")
+    console.print("[yellow]Goals[/yellow]")
+    console.print(
+        f"BTTS Yes: {probabilities['btts_yes']:.2%} | "
+        f"BTTS No: {probabilities['btts_no']:.2%}"
+    )
+    console.print(
+        f"Over 2.5: {probabilities['over_25']:.2%} | "
+        f"Under 2.5: {probabilities['under_25']:.2%}"
+    )
+    console.print(
+        f"{result['home_team']} to score: {probabilities['home_scores']:.2%} | "
+        f"{result['away_team']} to score: {probabilities['away_scores']:.2%}"
+    )
 
 @app.command()
 def evaluate_draw_rule_command(
