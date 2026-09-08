@@ -17,6 +17,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 ROUND_PATTERN = re.compile(r"^/api/rounds/([a-f0-9]{32})$")
 PICK_PATTERN = re.compile(r"^/api/rounds/([a-f0-9]{32})/picks$")
 COMPLETE_PATTERN = re.compile(r"^/api/rounds/([a-f0-9]{32})/complete$")
+REVIEW_PATTERN = re.compile(r"^/api/rounds/([a-f0-9]{32})/reviews$")
 
 
 class GameRequestHandler(BaseHTTPRequestHandler):
@@ -69,6 +70,19 @@ class GameRequestHandler(BaseHTTPRequestHandler):
             match = COMPLETE_PATTERN.fullmatch(path)
             if match:
                 self._json(self.service.complete_round(match.group(1)))
+                return
+            match = REVIEW_PATTERN.fullmatch(path)
+            if match:
+                if "match_id" not in payload:
+                    raise GameError("match_id is required.")
+                self._json(
+                    self.service.save_review(
+                        match.group(1),
+                        int(payload["match_id"]),
+                        payload.get("review", ""),
+                        payload.get("factor", ""),
+                    )
+                )
                 return
             self._json({"error": "Endpoint not found."}, 404)
         except (json.JSONDecodeError, UnicodeDecodeError):
