@@ -41,6 +41,12 @@ Run the week-safe walk-forward BTTS backtest:
 python -m src.main train-weekly-btts
 ```
 
+The experimental branches and comparable holdout results are documented in
+[`docs/btts_experiments.md`](docs/btts_experiments.md). The combined accuracy branch
+also provides calibrated probabilities, a Dixon-Coles benchmark, optional no-quota
+and opening-market-residual policies, a closing-market benchmark, and a block-
+bootstrap uncertainty audit.
+
 This command selects a feature family and weekly probability-rank rule on the three
 seasons before the test season. Week 1 uses only earlier seasons. After every later
 week is predicted and scored, its completed results update the online models before

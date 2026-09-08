@@ -1,0 +1,4 @@
+match_week,matches,correct,accuracy,target_met,cumulative_accuracy,training_rows,selected_combination,decision_policy,rank_fraction,rank_by_competition
+1,39,22,0.5641025641025641,False,0.5641025641025641,14739,recent_form,rank,0.6500000000000002,False
+2,22,14,0.6363636363636364,True,0.5901639344262295,14778,recent_form,rank,0.6500000000000002,False
+3,11,6,0.5454545454545454,False,0.5833333333333334,14800,recent_form,rank,0.6500000000000002,False

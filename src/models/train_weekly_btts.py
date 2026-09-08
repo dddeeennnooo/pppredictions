@@ -10,13 +10,26 @@ from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifie
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.linear_model import SGDClassifier
-from sklearn.metrics import accuracy_score, classification_report, log_loss
+from sklearn.metrics import (
+    accuracy_score,
+    brier_score_loss,
+    classification_report,
+    log_loss,
+)
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sqlalchemy import text
 
 from src.config import BASE_DIR
 from src.database.connection import Base, engine, get_session
+from src.models.probability_calibration import (
+    PlattProbabilityCalibrator,
+    expected_calibration_error,
+)
+from src.models.market_residual import (
+    logit_market_blend,
+    opening_market_btts_proxy,
+)
 
 
 MODEL_PATH = BASE_DIR / "artifacts" / "models" / "weekly_btts_model.pkl"
@@ -36,6 +49,7 @@ METADATA_COLUMNS = {
     "home_team",
     "away_team",
     "target_btts",
+    "market_btts_proxy_probability",
 }
 
 
@@ -447,6 +461,12 @@ def _build_weekly_features(
                     "market_away_probability": p_away,
                     "market_strength_gap": abs(p_home - p_away),
                     "market_over_25_probability": _over_probability(row),
+                    "market_btts_proxy_probability": opening_market_btts_proxy(
+                        p_home,
+                        p_draw,
+                        p_away,
+                        _over_probability(row),
+                    ),
                     "has_over_25_market": int(
                         not pd.isna(row.odds_over_25)
                         and not pd.isna(row.odds_under_25)
@@ -1011,8 +1031,13 @@ def _weekly_rank_predictions(
     return predictions, thresholds
 
 
-def train_weekly_btts_model() -> dict:
+def train_weekly_btts_model(
+    decision_policy: str = "rank",
+    include_market_residual: bool = False,
+) -> dict:
     """Select a statistic combination, predict, then learn after every week."""
+    if decision_policy not in {"rank", "threshold"}:
+        raise ValueError("decision_policy must be 'rank' or 'threshold'.")
     target_accuracy = 0.60
     df = build_weekly_btts_dataset()
     if df.empty:
@@ -1081,6 +1106,19 @@ def train_weekly_btts_model() -> dict:
     validation_probabilities["mean_ensemble"] = np.mean(
         list(validation_probabilities.values()), axis=0
     )
+    if include_market_residual:
+        compact_probabilities = validation_probabilities["compact_btts_form"]
+        market_probabilities = validation[
+            "market_btts_proxy_probability"
+        ].to_numpy()
+        for model_weight in (0.25, 0.50, 0.75):
+            validation_probabilities[f"market_residual_{model_weight:.2f}"] = (
+                logit_market_blend(
+                    compact_probabilities,
+                    market_probabilities,
+                    model_weight,
+                )
+            )
     rank_results = []
     for name, probabilities in validation_probabilities.items():
         for fraction in np.arange(0.35, 0.751, 0.025):
@@ -1116,6 +1154,22 @@ def train_weekly_btts_model() -> dict:
     selected_rank_fraction = best_rank["fraction"]
     selected_rank_by_competition = best_rank["by_competition"]
     best_metrics = best_rank["metrics"]
+    if decision_policy == "threshold":
+        selected_probability_source = max(
+            feature_sets,
+            key=lambda name: (
+                candidate_calibration[name]["metrics"]["overall_accuracy"],
+                candidate_calibration[name]["metrics"]["mean_week_accuracy"],
+                candidate_calibration[name]["metrics"]["weeks_at_target"],
+            ),
+        )
+        best_metrics = candidate_calibration[selected_probability_source]["metrics"]
+        selected_rank_fraction = np.nan
+        selected_rank_by_competition = False
+    probability_calibrator = PlattProbabilityCalibrator().fit(
+        validation_probabilities[selected_probability_source],
+        validation["target_btts"],
+    )
 
     prediction_frames = []
     weekly_rows = []
@@ -1165,14 +1219,28 @@ def train_weekly_btts_model() -> dict:
                 ],
                 axis=0,
             )
+        elif selected_name.startswith("market_residual_"):
+            model_weight = float(selected_name.rsplit("_", 1)[1])
+            probabilities = logit_market_blend(
+                candidate_outputs["compact_btts_form"]["probabilities"],
+                week_test["market_btts_proxy_probability"].to_numpy(),
+                model_weight,
+            )
         else:
             probabilities = candidate_outputs[selected_name]["probabilities"]
-        predictions, thresholds = _weekly_rank_predictions(
-            week_test,
-            probabilities,
-            rank_rule["fraction"],
-            by_competition=rank_rule["by_competition"],
-        )
+        raw_probabilities = probabilities.copy()
+        probabilities = probability_calibrator.transform(probabilities)
+        if decision_policy == "rank":
+            predictions, thresholds = _weekly_rank_predictions(
+                week_test,
+                probabilities,
+                rank_rule["fraction"],
+                by_competition=rank_rule["by_competition"],
+            )
+        else:
+            selected_output = candidate_outputs[selected_name]
+            predictions = selected_output["predictions"]
+            thresholds = np.full(len(week_test), selected_output["threshold"])
         targets = week_test["target_btts"].astype(int).to_numpy()
         for name, output in candidate_outputs.items():
             candidate_week_scores[name].append(
@@ -1192,6 +1260,7 @@ def train_weekly_btts_model() -> dict:
             cumulative_targets, cumulative_predictions
         )
 
+        week_test["raw_btts_probability"] = raw_probabilities
         week_test["btts_probability"] = probabilities
         week_test["decision_threshold"] = thresholds
         week_test["selected_combination"] = selected_name
@@ -1211,6 +1280,7 @@ def train_weekly_btts_model() -> dict:
                 "training_rows": len(pretest)
                 + int((test["match_week"] < week).sum()),
                 "selected_combination": selected_name,
+                "decision_policy": decision_policy,
                 "rank_fraction": rank_rule["fraction"],
                 "rank_by_competition": rank_rule["by_competition"],
             }
@@ -1227,6 +1297,8 @@ def train_weekly_btts_model() -> dict:
         y_test, np.full(len(y_test), baseline_class)
     )
     test_loss = log_loss(y_test, y_probability, labels=[0, 1])
+    test_brier = brier_score_loss(y_test, y_probability)
+    test_calibration_error = expected_calibration_error(y_test, y_probability)
     weeks_at_target = int(weekly_summary["target_met"].sum())
     worst_week_accuracy = float(weekly_summary["accuracy"].min())
     worst_weeks = weekly_summary.loc[
@@ -1243,6 +1315,7 @@ def train_weekly_btts_model() -> dict:
         "date",
         "home_team",
         "away_team",
+        "raw_btts_probability",
         "btts_probability",
         "decision_threshold",
         "selected_combination",
@@ -1263,6 +1336,9 @@ def train_weekly_btts_model() -> dict:
     MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     artifact = {
         "models": final_models,
+        "probability_calibrator": probability_calibrator,
+        "decision_policy": decision_policy,
+        "include_market_residual": include_market_residual,
         "component_names": list(feature_sets),
         "feature_sets": feature_sets,
         "feature_columns": feature_columns,
@@ -1296,10 +1372,18 @@ def train_weekly_btts_model() -> dict:
         "test_season": test_season,
         "validation_rows": len(validation),
         "test_rows": len(test),
-        "selected_model": "calibrated_weekly_rank",
+        "selected_model": (
+            "calibrated_weekly_rank"
+            if decision_policy == "rank"
+            else "calibrated_probability_threshold"
+        ),
         "component_names": list(feature_sets),
         "selected_threshold": None,
-        "threshold_mode": "weekly_probability_rank",
+        "threshold_mode": (
+            "weekly_probability_rank"
+            if decision_policy == "rank"
+            else candidate_calibration[selected_probability_source]["mode"]
+        ),
         "target_accuracy": target_accuracy,
         "rank_probability_source": selected_probability_source,
         "rank_fraction": selected_rank_fraction,
@@ -1335,6 +1419,8 @@ def train_weekly_btts_model() -> dict:
         "test_accuracy": test_accuracy,
         "baseline_accuracy": baseline_accuracy,
         "test_log_loss": test_loss,
+        "test_brier_score": test_brier,
+        "test_calibration_error": test_calibration_error,
         "predicted_no": int((y_pred == 0).sum()),
         "predicted_yes": int((y_pred == 1).sum()),
         "classification_report": report,

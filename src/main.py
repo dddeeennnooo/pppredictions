@@ -1,4 +1,5 @@
 import typer
+import pandas as pd
 from collections import Counter
 from datetime import date as Date
 from rich.console import Console
@@ -27,6 +28,10 @@ from src.models.train_team_scoring import train_team_scoring_models
 from src.models.train_advanced_btts import train_advanced_btts_model
 from src.models.train_weekly_btts import train_weekly_btts_model
 from src.models.train_monthly_btts import train_monthly_btts_model
+from src.models.train_dixon_coles_btts import train_dixon_coles_btts_model
+from src.models.btts_market_benchmark import evaluate_closing_market_benchmark
+from src.backtesting.btts_evaluation import audit_prediction_frame
+from src.config import BASE_DIR
 from src.importers.sportmonks_importer import (
     import_sportmonks_enrichment,
     import_sportmonks_transfers,
@@ -508,10 +513,16 @@ def train_advanced_btts():
 
 
 @app.command()
-def train_weekly_btts():
+def train_weekly_btts(
+    decision_policy: str = "rank",
+    include_market_residual: bool = False,
+):
     """Retrain after each match week and backtest the latest season."""
     console.print("[yellow]Building week-safe features and selecting a model...[/yellow]")
-    result = train_weekly_btts_model()
+    result = train_weekly_btts_model(
+        decision_policy=decision_policy,
+        include_market_residual=include_market_residual,
+    )
     console.print(
         f"[green]Weekly BTTS backtest complete for {result['test_season']}.[/green]"
     )
@@ -524,6 +535,11 @@ def train_weekly_btts():
             f"Rank rule: {result['rank_probability_source']}, "
             f"top {result['rank_fraction']:.1%} per "
             f"{'competition/week' if result['rank_by_competition'] else 'week'}"
+        )
+    elif result["selected_model"] == "calibrated_probability_threshold":
+        console.print(
+            f"No-quota threshold rule: {result['rank_probability_source']}, "
+            f"mode={result['threshold_mode']}"
         )
     elif result["selected_model"] == "calibrated_week_rank_schedule":
         console.print(
@@ -543,7 +559,7 @@ def train_weekly_btts():
             f"accuracy={week['accuracy']:.2%}, "
             f"target={'YES' if week['target_met'] else 'NO'}, "
             f"stats={week['selected_combination']}, "
-            f"top={week['rank_fraction']:.1%}, "
+            f"policy={week['decision_policy']}, "
             f"cumulative={week['cumulative_accuracy']:.2%}, "
             f"training_rows={week['training_rows']}"
         )
@@ -558,6 +574,11 @@ def train_weekly_btts():
     console.print(f"Final accuracy: {result['test_accuracy']:.4f}")
     console.print(f"Majority baseline: {result['baseline_accuracy']:.4f}")
     console.print(f"Log loss: {result['test_log_loss']:.4f}")
+    console.print(f"Brier score: {result['test_brier_score']:.4f}")
+    console.print(
+        f"Expected calibration error: "
+        f"{result['test_calibration_error']:.4f}"
+    )
     console.print(f"Predicted No: {result['predicted_no']}")
     console.print(f"Predicted Yes: {result['predicted_yes']}")
     console.print(f"Predictions: {result['predictions_path']}")
@@ -565,6 +586,63 @@ def train_weekly_btts():
     console.print(f"Model: {result['model_path']}")
     console.print("")
     console.print(result["classification_report"])
+
+
+@app.command("train-dixon-coles-btts")
+def train_dixon_coles_btts():
+    """Fit and evaluate a time-decayed Dixon-Coles BTTS model."""
+    console.print("[yellow]Training Dixon-Coles BTTS model...[/yellow]")
+    result = train_dixon_coles_btts_model()
+    console.print(
+        f"[green]Dixon-Coles backtest complete for {result['test_season']}.[/green]"
+    )
+    console.print(
+        f"Selected half-life={result['half_life_days']:.0f} days, "
+        f"threshold={result['threshold']:.2f}"
+    )
+    console.print(f"Validation accuracy: {result['validation_accuracy']:.4f}")
+    console.print(f"Test accuracy: {result['test_accuracy']:.4f}")
+    console.print(f"Majority baseline: {result['baseline_accuracy']:.4f}")
+    console.print(f"Log loss: {result['test_log_loss']:.4f}")
+    console.print(f"Brier score: {result['test_brier_score']:.4f}")
+
+
+@app.command("benchmark-btts-market")
+def benchmark_btts_market():
+    """Benchmark BTTS against closing 1X2 and totals prices."""
+    result = evaluate_closing_market_benchmark()
+    console.print(
+        f"[green]Closing-market benchmark for {result['test_season']}[/green]"
+    )
+    console.print(f"Matches: {result['rows']}")
+    console.print(f"Accuracy: {result['accuracy']:.4f}")
+    console.print(f"Log loss: {result['log_loss']:.4f}")
+    console.print(f"Brier score: {result['brier_score']:.4f}")
+    for league in result["by_competition"]:
+        console.print(
+            f"{league['competition']}: {league['accuracy']:.4f} "
+            f"({league['matches']} matches)"
+        )
+
+
+@app.command("audit-weekly-btts")
+def audit_weekly_btts():
+    """Audit the saved weekly predictions with proper scores and uncertainty."""
+    path = BASE_DIR / "artifacts" / "predictions" / "weekly_btts_predictions.csv"
+    result = audit_prediction_frame(pd.read_csv(path))
+    interval = result["accuracy_lift"]
+    console.print(f"[green]Weekly BTTS audit ({result['matches']} matches)[/green]")
+    console.print(f"Accuracy: {result['accuracy']:.4f}")
+    console.print(f"Majority baseline: {result['baseline_accuracy']:.4f}")
+    console.print(
+        f"Accuracy lift: {interval['lift']:+.4f} "
+        f"(95% week-block CI {interval['lower_95']:+.4f} to "
+        f"{interval['upper_95']:+.4f})"
+    )
+    console.print(f"Log loss: {result['log_loss']:.4f}")
+    console.print(f"Brier score: {result['brier_score']:.4f}")
+    console.print(f"AUC: {result['auc']:.4f}")
+    console.print(f"Calibration error: {result['calibration_error']:.4f}")
 
 
 @app.command()
