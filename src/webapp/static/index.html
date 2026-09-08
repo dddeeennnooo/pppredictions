@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f4f0">
+  <title>Touchline — Human vs Model</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <button class="brand" id="home-button" aria-label="Return home">
+      <span class="brand-mark"><i></i><i></i><i></i></span>
+      <span>Touchline</span>
+    </button>
+    <div class="archive-note">
+      <span class="live-dot"></span>
+      The football prediction challenge
+    </div>
+    <div class="career-record" id="career-record">
+      <span>RECORD</span><strong>—</strong>
+    </div>
+  </header>
+
+  <main>
+    <section id="lobby" class="screen lobby-screen">
+      <div class="hero-copy">
+        <p class="eyebrow">HUMAN VS MODEL</p>
+        <h1>Read the game.<br><em>Beat the model.</em></h1>
+        <p class="hero-description">Ten matches from last season. Five seasons of form in your hands. The model's picks are already locked.</p>
+      </div>
+
+      <div class="setup-card">
+        <div class="setup-heading">
+          <span>01</span>
+          <div><p>Choose your challenge</p><small>Ten matches. One point per correct prediction.</small></div>
+        </div>
+        <div class="league-picker">
+          <label for="league-select">League</label>
+          <select id="league-select" aria-describedby="league-note" disabled>
+            <option value="">Loading leagues…</option>
+          </select>
+          <p id="league-note">Every fixture in your round comes from the league you choose.</p>
+        </div>
+        <div class="mode-grid" role="radiogroup" aria-label="Game mode">
+          <button class="mode-card active" data-mode="btts" role="radio" aria-checked="true">
+            <span class="mode-icon">Y/N</span>
+            <span><strong>Both teams score</strong><small>Call YES or NO · one point per match</small></span>
+            <i class="radio-mark"></i>
+          </button>
+          <button class="mode-card" data-mode="score" role="radio" aria-checked="false">
+            <span class="mode-icon score-icon">2:1</span>
+            <span><strong>Exact score</strong><small>Name the final score · no partial credit</small></span>
+            <i class="radio-mark"></i>
+          </button>
+        </div>
+        <div class="setup-footer">
+          <div class="data-stamp">
+            <span id="archive-count">—</span>
+            <small>matches in the archive</small>
+          </div>
+          <button class="primary-button" id="start-button" disabled>
+            <span>START THE CHALLENGE</span><b>↗</b>
+          </button>
+        </div>
+      </div>
+
+      <div class="rules-strip">
+        <article><span>01</span><p><strong>Study the evidence</strong>Current-season form plus four earlier campaigns.</p></article>
+        <article><span>02</span><p><strong>Lock ten calls</strong>The AI cannot change its predictions after kickoff.</p></article>
+        <article><span>03</span><p><strong>Teach the machine</strong>Win the round and your edge recalibrates its next challenge.</p></article>
+      </div>
+    </section>
+
+    <section id="game" class="screen game-screen hidden">
+      <div class="round-header">
+        <div>
+          <p class="eyebrow" id="round-label">ROUND · BTTS</p>
+          <h2>Make the call.</h2>
+        </div>
+        <div class="round-status">
+          <div><span>YOU</span><strong id="human-live">0</strong></div>
+          <div class="versus">VS</div>
+          <div><span>MODEL</span><strong>LOCKED</strong></div>
+        </div>
+      </div>
+
+      <div class="progress-track"><i id="progress-bar"></i></div>
+      <div class="game-layout">
+        <aside class="fixture-rail">
+          <p class="section-label">THE COUPON</p>
+          <div id="fixture-list"></div>
+          <button id="reveal-button" class="reveal-button" disabled>REVEAL THE ROUND <span>0/10</span></button>
+        </aside>
+
+        <section class="prediction-stage">
+          <div class="fixture-meta">
+            <span id="fixture-league"></span>
+            <span id="fixture-date"></span>
+          </div>
+          <div class="matchup">
+            <div class="club home-club">
+              <div class="club-badge" id="home-code"></div>
+              <h3 id="home-name"></h3><small>HOME</small>
+            </div>
+            <div class="kickoff-mark"><span>V</span><small>FULL TIME</small></div>
+            <div class="club away-club">
+              <div class="club-badge away" id="away-code"></div>
+              <h3 id="away-name"></h3><small>AWAY</small>
+            </div>
+          </div>
+
+          <div class="call-panel">
+            <p class="section-label" id="call-question">WILL BOTH TEAMS SCORE?</p>
+            <div id="btts-input" class="btts-options">
+              <button data-value="yes"><span>YES</span><small>Both find the net</small></button>
+              <button data-value="no"><span>NO</span><small>At least one blank</small></button>
+            </div>
+            <div id="score-input" class="score-input hidden">
+              <label><span id="score-home-label">HOME</span><input id="home-goals" type="number" min="0" max="9" value="1" inputmode="numeric"></label>
+              <b>:</b>
+              <label><span id="score-away-label">AWAY</span><input id="away-goals" type="number" min="0" max="9" value="1" inputmode="numeric"></label>
+            </div>
+            <button id="lock-button" class="lock-button" disabled>LOCK THIS CALL <span>→</span></button>
+            <div class="model-lock"><span class="lock-glyph">⌾</span><p><strong>MODEL PICK SEALED</strong><small>Prediction and confidence reveal after all 10 calls.</small></p></div>
+          </div>
+        </section>
+
+        <aside class="intel-panel">
+          <div class="intel-heading"><p class="section-label">SCOUTING DESK</p><span>PRE-MATCH ONLY</span></div>
+          <div class="team-tabs"><button id="home-tab" class="active"></button><button id="away-tab"></button></div>
+          <div class="form-block">
+            <p>LAST FIVE</p><div id="recent-form" class="form-dots"></div>
+          </div>
+          <a class="standings-link" href="#league-standings">View league standings ↓</a>
+          <div class="season-heading"><span>SEASON</span><span>MP</span><span>W-D-L</span><span>PPG</span><span>GF</span><span>GA</span><span>BTTS</span></div>
+          <div id="season-stats" class="season-stats"></div>
+          <div class="h2h-block">
+            <p>HEAD TO HEAD · LAST FIVE</p>
+            <div id="head-to-head"></div>
+          </div>
+        </aside>
+      </div>
+      <section class="standings-panel" id="league-standings" aria-labelledby="standings-title">
+        <div class="standings-heading">
+          <div><h3 id="standings-title">League standings</h3><p id="standings-cutoff"></p></div>
+          <div class="standings-legend"><span class="home">Home team</span><span class="away">Away team</span></div>
+        </div>
+        <div class="standings-scroll" role="region" aria-label="League standings table" tabindex="0">
+          <table class="standings-table">
+            <caption id="standings-caption">Season standings before the selected fixture</caption>
+            <thead><tr><th scope="col">Pos</th><th scope="col">Team</th><th scope="col">P</th><th scope="col">W</th><th scope="col">D</th><th scope="col">L</th><th scope="col">GF</th><th scope="col">GA</th><th scope="col">GD</th><th scope="col">Pts</th></tr></thead>
+            <tbody id="standings-rows"></tbody>
+          </table>
+        </div>
+        <p class="standings-note">Calculated from earlier results: points, then goal difference, then goals scored. Equal teams are listed alphabetically. League-specific tiebreaks and points deductions are not included.</p>
+      </section>
+    </section>
+
+    <section id="results" class="screen results-screen hidden">
+      <div class="result-hero">
+        <p class="eyebrow">FINAL WHISTLE</p>
+        <h2 id="result-title">You beat the model.</h2>
+        <p id="result-subtitle"></p>
+        <p id="result-saved" class="result-saved"></p>
+        <div class="final-score">
+          <div><span>HUMAN</span><strong id="final-human">0</strong></div>
+          <i>—</i>
+          <div><strong id="final-ai">0</strong><span>MODEL</span></div>
+        </div>
+      </div>
+      <div class="result-grid" id="result-grid"></div>
+      <div class="learning-card">
+        <div class="learning-icon">∆</div>
+        <div><p class="section-label">MODEL RECALIBRATION</p><h3 id="learning-title"></h3><p id="learning-copy"></p></div>
+        <div class="learning-value"><span id="learning-before"></span><i>→</i><strong id="learning-after"></strong></div>
+      </div>
+      <div class="result-actions">
+        <button class="secondary-button" id="review-button">REVIEW PICKS</button>
+        <button class="primary-button" id="again-button"><span>PLAY ANOTHER ROUND</span><b>↗</b></button>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

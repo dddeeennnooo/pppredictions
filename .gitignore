@@ -6,6 +6,7 @@ __pycache__/
 # Local databases and generated model artifacts
 *.db
 artifacts/models/*.pkl
+artifacts/ui-preview/
 
 # Tool and editor files
 .pytest_cache/
