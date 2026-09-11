@@ -5,8 +5,16 @@ __pycache__/
 
 # Local databases and generated model artifacts
 *.db
+!football_predictor.db
 artifacts/models/*.pkl
 artifacts/ui-preview/
+
+# Large source datasets used only for local imports and model training
+data/raw/european-football-injuries-2020-2025.zip
+data/raw/injuries/
+data/raw/leagues/
+data/raw/open_btts/
+data/raw/serie_a/serie_a_2026_2027.csv
 
 # Tool and editor files
 .pytest_cache/

@@ -26,6 +26,9 @@ class WebGameTests(unittest.TestCase):
         gc.collect()
         self.tempdir.cleanup()
 
+    def test_healthcheck_confirms_database_is_readable(self):
+        self.assertEqual(self.service.healthcheck(), {"status": "ok"})
+
     def _build_database(self):
         with closing(sqlite3.connect(self.database_path)) as connection, connection:
             connection.execute(

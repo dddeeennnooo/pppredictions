@@ -11,6 +11,35 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+## Docker and Render deployment
+
+Build and run the same container locally with Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+Open <http://localhost:10000>. `docker compose down` stops the service while
+keeping its named database volume for the next run.
+
+For Render, commit `Dockerfile`, `.dockerignore`, `render.yaml`,
+`football_predictor.db`, and the weekly prediction CSV, then push the branch to
+your Git provider. In the Render dashboard, choose **New > Blueprint**, connect
+the repository, and apply its `render.yaml`. The Blueprint builds the Docker
+image, checks `/api/health`, and attaches a 1 GB persistent disk at
+`/app/storage`. It uses Render's Frankfurt region and its smallest paid web
+service size (`0.5c-512mb`).
+
+The service uses `FOOTBALL_PREDICTOR_DB=/app/storage/football_predictor.db`.
+On the first boot, `src.webapp.start` copies the image's
+`football_predictor.db` seed to that disk. Later rounds, reviews, and
+calibration data are written to the disk copy and survive deploys and restarts.
+Existing disk data is never replaced automatically by a newer image seed.
+
+Render persistent disks require a paid web-service plan and limit the service
+to one instance. A free instance can run this image only with ephemeral SQLite
+data, so user rounds and reviews would be lost after a restart or redeploy.
+
 ## Commands
 
 Initialize and populate the database, then build the pre-match features:
@@ -25,6 +54,18 @@ Train and evaluate the BTTS model using a chronological 80/20 split:
 
 ```powershell
 python -m src.main train-btts
+```
+
+Train separate home/away scoring models and apply the scoring-probability-gap
+rule. BTTS Yes requires a gap of at least 20 percentage points and both teams'
+scoring probabilities to be strictly above 50%; optional joint-probability,
+upper-gap, and team-ranking safeguards are selected on a separate
+chronological validation slice before the final holdout is evaluated. Extra
+safeguards remain disabled unless they improve validation accuracy by at least
+one percentage point, limiting fragile threshold overfitting:
+
+```powershell
+python -m src.main train-team-scoring
 ```
 
 Train the advanced BTTS experiment with rolling attack/defense form,
@@ -81,8 +122,8 @@ fixture; only rolling values from completed prior matchweeks become model featur
 Confirmed lineups, formations, and coaches are treated as pre-match inputs, so this
 version represents a prediction made after official team news is available.
 
-The local SQLite database, virtual environment, and generated model artifacts are
-excluded from version control.
+The deployment seed database is included in version control; other SQLite
+databases, the virtual environment, and generated model artifacts are excluded.
 
 ## Predict an upcoming fixture
 

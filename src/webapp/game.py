@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.config import BASE_DIR
+from src.config import BASE_DIR, DATABASE_PATH
 
 
 LEAGUE_NAMES = {
@@ -70,7 +70,7 @@ class GameService:
         database_path: Path | str | None = None,
         predictions_path: Path | str | None = None,
     ) -> None:
-        self.database_path = Path(database_path or BASE_DIR / "football_predictor.db")
+        self.database_path = Path(database_path or DATABASE_PATH)
         self.predictions_path = Path(
             predictions_path
             or BASE_DIR
@@ -189,6 +189,14 @@ class GameService:
                 for row in csv.DictReader(handle)
                 if row.get("match_id")
             }
+
+    def healthcheck(self) -> dict[str, str]:
+        """Confirm that the live database is readable for platform probes."""
+        with closing(self._connect()) as connection:
+            row = connection.execute("SELECT 1 FROM matches LIMIT 1").fetchone()
+        if row is None:
+            raise RuntimeError("The match database is empty.")
+        return {"status": "ok"}
 
     def metadata(self) -> dict[str, Any]:
         with closing(self._connect()) as connection, connection:

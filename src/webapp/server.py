@@ -28,7 +28,7 @@ class GameRequestHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         try:
             if path == "/api/health":
-                self._json({"status": "ok"})
+                self._json(self.service.healthcheck())
                 return
             if path == "/api/meta":
                 self._json(self.service.metadata())
