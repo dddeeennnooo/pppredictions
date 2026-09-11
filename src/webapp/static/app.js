@@ -3,6 +3,7 @@ const state = {
   competition: "",
   game: null,
   activeIndex: 0,
+  activeReviewIndex: 0,
   intelSide: "home",
   pendingPrediction: null,
   meta: null,
@@ -51,6 +52,23 @@ async function loadMeta() {
   select.value = state.competition;
   select.disabled = !leagues.length;
   updateLeagueSelection();
+  renderRecentRounds();
+}
+
+function renderRecentRounds() {
+  const rounds = state.meta?.recent_rounds || [];
+  const section = $("#recent-rounds");
+  section.classList.toggle("hidden", !rounds.length);
+  if (!rounds.length) return;
+  $("#recent-round-list").innerHTML = rounds.map((round) => `
+    <article class="recent-round-row">
+      <div><strong>${escapeHtml(round.competition_name)} · ${round.mode === "btts" ? "BTTS" : "Exact score"}</strong>
+        <span>${round.season.replace("/", "–")} · Human ${round.human_score}–${round.ai_score} Model</span></div>
+      <div class="recent-review-progress"><span>${round.reviews_completed}/${round.reviews_required} reviews</span>
+        <i><b style="width:${round.reviews_completed * 10}%"></b></i></div>
+      <button class="secondary-button recent-review-button" data-round-id="${round.id}">${round.review_complete ? "EDIT NOTES" : "WRITE REVIEWS"}</button>
+    </article>`).join("");
+  $$(".recent-review-button").forEach((button) => button.addEventListener("click", () => openRoundReview(button.dataset.roundId)));
 }
 
 function updateLeagueSelection() {
@@ -225,9 +243,15 @@ async function revealRound() {
 function renderResults() {
   const game = state.game;
   const messages = {
-    human: ["You beat the model.", "Your winning calls are now part of the model's next calibration."],
-    ai: ["The model holds the line.", "No recalibration this time. Find the edge and come back stronger."],
-    draw: ["Honours even.", "The round is tied, so the model keeps its current calibration."],
+    human: ["You beat the model.", game.review_complete
+      ? "Your reviewed winning calls are part of the model's next calibration."
+      : "The result is saved. Review all ten matches to contribute your winning insight."],
+    ai: ["The model holds the line.", game.review_complete
+      ? "Your match notes are saved as human context for this round."
+      : "Review the ten matches to preserve the human context behind your calls."],
+    draw: ["Honours even.", game.review_complete
+      ? "Your match notes are saved as human context for this round."
+      : "Review the ten matches to preserve the human context behind your calls."],
   };
   $("#result-title").textContent = messages[game.outcome][0];
   $("#result-subtitle").textContent = messages[game.outcome][1];
@@ -249,22 +273,127 @@ function renderResults() {
     </article>`;
   }).join("");
   renderLearningCard();
+  $("#review-button").textContent = game.review_complete
+    ? "EDIT MATCH REVIEWS"
+    : `WRITE MATCH REVIEWS · ${game.reviews_completed}/${game.reviews_required}`;
 }
 
 function renderLearningCard() {
   const before = state.game.calibration_before;
   const after = state.game.calibration_after;
   const learned = after.learning_examples - before.learning_examples;
+  if (!state.game.review_complete) {
+    $("#learning-title").textContent = `Human review required · ${state.game.reviews_completed}/${state.game.reviews_required}`;
+    $("#learning-copy").textContent = state.game.outcome === "human"
+      ? "Your result is saved. Review all ten matches before your winning edge is added to the adaptive model."
+      : "Your notes are saved as human context. Recalibration remains reserved for rounds you win.";
+    if (state.game.mode === "btts") {
+      $("#learning-before").textContent = signedPercent(before.threshold_shift);
+      $("#learning-after").textContent = "PENDING";
+    } else {
+      $("#learning-before").textContent = `${signed(before.home_goal_bias)} / ${signed(before.away_goal_bias)}`;
+      $("#learning-after").textContent = "PENDING";
+    }
+    return;
+  }
   if (state.game.mode === "btts") {
-    $("#learning-title").textContent = learned ? `${learned} new human-edge signal${learned === 1 ? "" : "s"}` : "Calibration held steady";
-    $("#learning-copy").textContent = learned ? "Only calls you won while the model missed were retained; repeated fixtures never count twice." : "The model only learns when you win the round and outperform it on an individual fixture.";
+    $("#learning-title").textContent = learned ? `${learned} reviewed human-edge signal${learned === 1 ? "" : "s"}` : "Human insight saved";
+    $("#learning-copy").textContent = learned ? "Your written reasoning and main factors are attached to the calls you won while the model missed." : "All ten match reviews are stored. The numeric calibration held steady for this round.";
     $("#learning-before").textContent = signedPercent(before.threshold_shift);
     $("#learning-after").textContent = signedPercent(after.threshold_shift);
   } else {
-    $("#learning-title").textContent = learned ? `${learned} score patterns retained` : "Goal bias held steady";
-    $("#learning-copy").textContent = learned ? "Human-only winning scores updated the home and away goal corrections for future rounds." : "Win a round to contribute score corrections to the model.";
+    $("#learning-title").textContent = learned ? `${learned} reviewed score patterns retained` : "Human insight saved";
+    $("#learning-copy").textContent = learned ? "Your written reasoning and main factors are attached to the score corrections for future rounds." : "All ten match reviews are stored. The goal calibration held steady for this round.";
     $("#learning-before").textContent = `${signed(before.home_goal_bias)} / ${signed(before.away_goal_bias)}`;
     $("#learning-after").textContent = `${signed(after.home_goal_bias)} / ${signed(after.away_goal_bias)}`;
+  }
+}
+
+async function openRoundReview(roundId = state.game?.id) {
+  if (!roundId) return;
+  try {
+    if (!state.game || state.game.id !== roundId || state.game.status !== "complete") {
+      state.game = await api(`/api/rounds/${roundId}`);
+    }
+    const firstMissing = state.game.fixtures.findIndex((fixture) => !fixture.human_review);
+    state.activeReviewIndex = firstMissing >= 0 ? firstMissing : 0;
+    renderReview();
+    showScreen("review");
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+function renderReview() {
+  const game = state.game;
+  const fixture = game.fixtures[state.activeReviewIndex];
+  const review = fixture.human_review;
+  $("#review-count").textContent = `${game.reviews_completed} / ${game.reviews_required}`;
+  $("#review-progress-bar").style.width = `${game.reviews_completed * 10}%`;
+  $("#review-league").textContent = `${fixture.competition_name} · ${fixture.season.replace("/", "–")}`;
+  $("#review-position").textContent = `MATCH ${fixture.position} OF ${game.round_size}`;
+  $("#review-home").textContent = fixture.home_team;
+  $("#review-away").textContent = fixture.away_team;
+  $("#review-score").textContent = fixture.actual_score;
+  $("#review-human-pick").textContent = `${displayPrediction(fixture.human_prediction, game.mode)} ${fixture.human_correct ? "✓" : "×"}`;
+  $("#review-human-pick").className = fixture.human_correct ? "correct" : "wrong";
+  $("#review-ai-pick").textContent = `${displayPrediction(fixture.model.prediction, game.mode)} ${fixture.ai_correct ? "✓" : "×"}`;
+  $("#review-ai-pick").className = fixture.ai_correct ? "correct" : "wrong";
+  $("#factor-options").innerHTML = state.meta.review_factors.map((factor) => `
+    <label><input type="radio" name="review-factor" value="${factor.value}" ${review?.factor === factor.value ? "checked" : ""}><span>${escapeHtml(factor.label)}</span></label>`).join("");
+  $("#review-text").value = review?.text || "";
+  updateReviewCharacterCount();
+  $("#save-review-button span").textContent = review ? "UPDATE & NEXT MATCH" : "SAVE & NEXT MATCH";
+  $("#review-match-list").innerHTML = game.fixtures.map((item, index) => `
+    <button class="review-match-row ${index === state.activeReviewIndex ? "active" : ""}" data-review-index="${index}">
+      <span>${String(item.position).padStart(2, "0")}</span><span><strong>${escapeHtml(item.home_team)}</strong><small>${escapeHtml(item.away_team)}</small></span>
+      <i class="${item.human_review ? "reviewed" : ""}">${item.human_review ? "✓" : "○"}</i>
+    </button>`).join("");
+  $$(".review-match-row").forEach((button) => button.addEventListener("click", () => {
+    state.activeReviewIndex = Number(button.dataset.reviewIndex);
+    renderReview();
+  }));
+  $("#review-complete-card").classList.toggle("hidden", !game.review_complete);
+  if (game.review_complete) {
+    $("#review-learning-message").textContent = game.outcome === "human"
+      ? "Your reviewed winning edges have been added to the model calibration."
+      : "Your notes are archived as human context for this round.";
+  }
+}
+
+function updateReviewCharacterCount() {
+  $("#review-character-count").textContent = `${$("#review-text").value.length.toLocaleString()} / 2,000`;
+}
+
+async function saveMatchReview(event) {
+  event.preventDefault();
+  const fixture = state.game.fixtures[state.activeReviewIndex];
+  const factor = document.querySelector('input[name="review-factor"]:checked')?.value;
+  const text = $("#review-text").value.trim();
+  if (!factor) { toast("Choose the main human factor."); return; }
+  if (text.length < 10) { toast("Write at least 10 characters about the match."); return; }
+  const button = $("#save-review-button");
+  button.disabled = true;
+  try {
+    const saved = await api(`/api/rounds/${state.game.id}/reviews`, {
+      method: "POST",
+      body: JSON.stringify({ match_id: fixture.id, factor, review: text }),
+    });
+    fixture.human_review = saved.review;
+    state.game.reviews_completed = saved.reviews_completed;
+    state.game.review_complete = saved.review_complete;
+    state.game.calibration_after = saved.calibration_after;
+    toast(saved.review_complete ? "All match reviews saved." : `Review ${fixture.position} saved.`);
+    const nextMissing = state.game.fixtures.findIndex((item, index) => index > state.activeReviewIndex && !item.human_review);
+    const anyMissing = state.game.fixtures.findIndex((item) => !item.human_review);
+    if (nextMissing >= 0) state.activeReviewIndex = nextMissing;
+    else if (anyMissing >= 0) state.activeReviewIndex = anyMissing;
+    renderReview();
+    if (saved.review_complete) await loadMeta();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -313,7 +442,11 @@ $("#again-button").addEventListener("click", () => {
   showScreen("lobby");
   $("#league-select").focus({ preventScroll: true });
 });
-$("#review-button").addEventListener("click", () => window.scrollTo({ top: 300, behavior: "smooth" }));
+$("#review-button").addEventListener("click", () => openRoundReview());
+$("#review-back").addEventListener("click", () => { renderResults(); showScreen("results"); });
+$("#review-result-button").addEventListener("click", () => { renderResults(); showScreen("results"); });
+$("#review-form").addEventListener("submit", saveMatchReview);
+$("#review-text").addEventListener("input", updateReviewCharacterCount);
 $("#home-button").addEventListener("click", () => showScreen("lobby"));
 
 loadMeta().catch((error) => toast(error.message));

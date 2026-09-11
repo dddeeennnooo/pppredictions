@@ -26,6 +26,9 @@ class WebGameTests(unittest.TestCase):
         gc.collect()
         self.tempdir.cleanup()
 
+    def test_healthcheck_confirms_database_is_readable(self):
+        self.assertEqual(self.service.healthcheck(), {"status": "ok"})
+
     def _build_database(self):
         with closing(sqlite3.connect(self.database_path)) as connection, connection:
             connection.execute(
@@ -90,6 +93,17 @@ class WebGameTests(unittest.TestCase):
                     }
                 )
 
+    def _review_every_match(self, game, factor="tactics"):
+        last = None
+        for fixture in game["fixtures"]:
+            last = self.service.save_review(
+                game["id"],
+                fixture["id"],
+                f"The match context for fixture {fixture['id']} supported my call.",
+                factor,
+            )
+        return last
+
     def test_playing_round_hides_results_and_model_prediction(self):
         game = self.service.create_round("btts", competition="E0", seed=7)
 
@@ -109,17 +123,28 @@ class WebGameTests(unittest.TestCase):
         self.assertEqual(result["outcome"], "human")
         self.assertEqual(result["human_score"], 10)
         self.assertEqual(result["ai_score"], 0)
-        self.assertEqual(result["calibration_after"]["learning_examples"], 10)
-        self.assertEqual(result["calibration_after"]["threshold_shift"], -0.08)
+        self.assertEqual(result["calibration_after"]["learning_examples"], 0)
+        self.assertFalse(result["review_complete"])
         self.assertIn("actual_score", result["fixtures"][0])
         self.assertEqual(result["fixtures"][0]["model"]["prediction"], "no")
+
+        review_result = self._review_every_match(result)
+        learned = self.service.get_round(game["id"])
+        self.assertTrue(review_result["learning_applied"])
+        self.assertTrue(learned["review_complete"])
+        self.assertEqual(learned["calibration_after"]["learning_examples"], 10)
+        self.assertEqual(learned["calibration_after"]["threshold_shift"], -0.08)
+        self.assertEqual(
+            learned["calibration_after"]["human_factors"]["tactics"], 10
+        )
 
     def test_same_fixture_is_never_learned_twice(self):
         for seed in (1, 2):
             game = self.service.create_round("btts", competition="E0", seed=seed)
             for fixture in game["fixtures"]:
                 self.service.save_pick(game["id"], fixture["id"], "yes")
-            self.service.complete_round(game["id"])
+            result = self.service.complete_round(game["id"])
+            self._review_every_match(result)
 
         self.assertEqual(
             self.service.metadata()["calibration"]["btts"]["learning_examples"], 10
@@ -147,8 +172,12 @@ class WebGameTests(unittest.TestCase):
         self.assertEqual(result["outcome"], "human")
         self.assertEqual(result["fixtures"][0]["actual_prediction"], "2-1")
         self.assertIsNone(result["fixtures"][0]["model"]["probability"])
-        self.assertGreater(result["calibration_after"]["learning_examples"], 0)
         self.assertIn("home_goal_bias", result["calibration_after"])
+        self.assertEqual(result["calibration_after"]["learning_examples"], 0)
+        self._review_every_match(result, factor="intuition")
+        reviewed = self.service.get_round(game["id"])
+        self.assertGreater(reviewed["calibration_after"]["learning_examples"], 0)
+        self.assertTrue(reviewed["review_complete"])
 
     def test_rejects_invalid_prediction(self):
         game = self.service.create_round("btts", competition="E0", seed=4)
@@ -274,6 +303,108 @@ class WebGameTests(unittest.TestCase):
         with closing(sqlite3.connect(self.database_path)) as connection:
             self.assertEqual(connection.execute('SELECT COUNT(*) FROM web_game_results').fetchone()[0], 0)
             self.assertEqual(connection.execute('SELECT COUNT(*) FROM web_learning_examples').fetchone()[0], 0)
+
+    def test_review_requires_completed_round_factor_and_meaningful_text(self):
+        game = self.service.create_round(competition="E0")
+        match_id = game["fixtures"][0]["id"]
+        with self.assertRaises(GameError):
+            self.service.save_review(game["id"], match_id, "Useful review text", "form")
+        for fixture in game["fixtures"]:
+            self.service.save_pick(game["id"], fixture["id"], "yes")
+        result = self.service.complete_round(game["id"])
+        for text_value, factor in (
+            ("too short", "form"),
+            ("A sufficiently detailed note", "unknown"),
+            ("x" * 2001, "form"),
+        ):
+            with self.subTest(text=text_value[:12], factor=factor), self.assertRaises(GameError):
+                self.service.save_review(game["id"], match_id, text_value, factor)
+        with self.assertRaises(GameError):
+            self.service.save_review(game["id"], 9999, "A sufficiently detailed note", "form")
+        self.assertEqual(result["reviews_completed"], 0)
+
+    def test_reviews_are_saved_individually_and_can_be_edited(self):
+        game = self.service.create_round(competition="E0")
+        for fixture in game["fixtures"]:
+            self.service.save_pick(game["id"], fixture["id"], "yes")
+        result = self.service.complete_round(game["id"])
+        fixture = result["fixtures"][0]
+        first = self.service.save_review(
+            game["id"], fixture["id"], "The recent form was the deciding signal.", "form"
+        )
+        second = self.service.save_review(
+            game["id"], fixture["id"], "The home venue was the stronger signal.", "venue"
+        )
+        loaded = self.service.get_round(game["id"])
+        loaded_review = loaded["fixtures"][0]["human_review"]
+        self.assertEqual(first["reviews_completed"], 1)
+        self.assertEqual(second["reviews_completed"], 1)
+        self.assertEqual(loaded_review["factor"], "venue")
+        self.assertEqual(loaded_review["text"], "The home venue was the stronger signal.")
+        with closing(sqlite3.connect(self.database_path)) as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM web_game_reviews WHERE round_id = ?", (game["id"],)
+            ).fetchone()[0], 1)
+
+    def test_partial_reviews_do_not_recalibrate_and_all_reviews_do(self):
+        game = self.service.create_round(competition="E0")
+        for fixture in game["fixtures"]:
+            self.service.save_pick(game["id"], fixture["id"], "yes")
+        result = self.service.complete_round(game["id"])
+        for fixture in result["fixtures"][:-1]:
+            saved = self.service.save_review(
+                game["id"], fixture["id"], "Tactical pressure created the scoring chances.", "tactics"
+            )
+            self.assertFalse(saved["review_complete"])
+            self.assertFalse(saved["learning_applied"])
+        self.assertEqual(
+            self.service.metadata()["calibration"]["btts"]["learning_examples"], 0
+        )
+        final = self.service.save_review(
+            game["id"], result["fixtures"][-1]["id"],
+            "Tactical pressure created the scoring chances.", "tactics"
+        )
+        self.assertTrue(final["review_complete"])
+        self.assertTrue(final["learning_applied"])
+        self.assertEqual(final["calibration_after"]["learning_examples"], 10)
+        with closing(sqlite3.connect(self.database_path)) as connection:
+            rows = connection.execute(
+                "SELECT human_factor, human_review FROM web_learning_examples"
+            ).fetchall()
+        self.assertEqual(len(rows), 10)
+        self.assertTrue(all(row[0] == "tactics" and "pressure" in row[1] for row in rows))
+
+    def test_reviews_from_lost_round_are_archived_without_recalibration(self):
+        for row in self.service._prediction_rows.values():
+            row["btts_probability"] = "0.75"
+        game = self.service.create_round(competition="E0")
+        for fixture in game["fixtures"]:
+            self.service.save_pick(game["id"], fixture["id"], "no")
+        result = self.service.complete_round(game["id"])
+        final = self._review_every_match(result, factor="motivation")
+        self.assertEqual(result["outcome"], "ai")
+        self.assertTrue(final["review_complete"])
+        self.assertFalse(final["learning_applied"])
+        self.assertEqual(final["calibration_after"]["learning_examples"], 0)
+        with closing(sqlite3.connect(self.database_path)) as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM web_game_reviews").fetchone()[0], 10)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM web_learning_examples").fetchone()[0], 0)
+
+    def test_recent_round_metadata_exposes_review_progress(self):
+        game = self.service.create_round(competition="E0")
+        for fixture in game["fixtures"]:
+            self.service.save_pick(game["id"], fixture["id"], "yes")
+        result = self.service.complete_round(game["id"])
+        self.service.save_review(
+            game["id"], result["fixtures"][0]["id"],
+            "The team form supported my prediction.", "form"
+        )
+        metadata = self.service.metadata()
+        recent = metadata["recent_rounds"][0]
+        self.assertEqual(recent["id"], game["id"])
+        self.assertEqual(recent["reviews_completed"], 1)
+        self.assertFalse(recent["review_complete"])
+        self.assertEqual(len(metadata["review_factors"]), 6)
 
 
 if __name__ == "__main__":

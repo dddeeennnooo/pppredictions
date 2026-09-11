@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: football-prediction
+    runtime: docker
+    plan: 0.5c-512mb
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: FOOTBALL_PREDICTOR_DB
+        value: /app/storage/football_predictor.db
+    disk:
+      name: football-predictor-data
+      mountPath: /app/storage
+      sizeGB: 1

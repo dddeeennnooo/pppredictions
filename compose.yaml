@@ -1,0 +1,17 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    environment:
+      FOOTBALL_PREDICTOR_DB: /app/storage/football_predictor.db
+      PORT: "10000"
+    ports:
+      - "10000:10000"
+    volumes:
+      - football-predictor-data:/app/storage
+    restart: unless-stopped
+
+volumes:
+  football-predictor-data:

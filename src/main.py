@@ -390,15 +390,21 @@ def train_btts():
 
 @app.command()
 def train_team_scoring():
-    """Train team-scoring models and evaluate gap/ranking BTTS rules."""
+    """Train team-scoring models and enforce the under-20-point BTTS No rule."""
     console.print("[yellow]Training separate team-scoring models...[/yellow]")
 
     result = train_team_scoring_models()
 
     console.print("[green]Team-scoring models trained.[/green]")
     console.print(f"Rows total: {result['rows_total']}")
-    console.print(f"Rows train: {result['rows_train']}")
+    console.print(f"Rows selection train: {result['rows_train']}")
+    console.print(f"Rows validation: {result['rows_validation']}")
+    console.print(f"Rows final train: {result['rows_final_train']}")
     console.print(f"Rows test: {result['rows_test']}")
+    console.print(
+        f"Validation period: {result['validation_start_date']} to "
+        f"{result['validation_end_date']}"
+    )
     console.print(
         f"Test period: {result['test_start_date']} to {result['test_end_date']}"
     )
@@ -406,8 +412,36 @@ def train_team_scoring():
     console.print(f"Away-team scoring accuracy: {result['away_score_accuracy']:.4f}")
     console.print(f"Home-team scoring log loss: {result['home_score_log_loss']:.4f}")
     console.print(f"Away-team scoring log loss: {result['away_score_log_loss']:.4f}")
+    console.print(f"Legacy BTTS rule accuracy: {result['legacy_rule_btts_accuracy']:.4f}")
     console.print(
-        f"BTTS rules accuracy: {result['rule_btts_accuracy']:.4f}"
+        f"Requested base-rule accuracy: "
+        f"{result['requested_rule_btts_accuracy']:.4f}"
+    )
+    console.print(f"Recalibrated BTTS rule accuracy: {result['rule_btts_accuracy']:.4f}")
+    console.print(
+        f"Mandatory rule: scoring-probability gap below "
+        f"{result['gap_no_threshold'] * 100:.0f} percentage points => BTTS No"
+    )
+    console.print(
+        "Mandatory rule: both team scoring probabilities must be greater than "
+        f"{result['minimum_team_score_probability'] * 100:.0f}% for BTTS Yes"
+    )
+    console.print(
+        f"Validation-selected minimum joint scoring probability: "
+        f"{result['minimum_joint_probability'] * 100:.1f}%"
+    )
+    upper_gap = result["upper_gap_no_threshold"]
+    console.print(
+        "Validation-selected upper-gap BTTS No threshold: "
+        + (f"{upper_gap * 100:.1f}%" if upper_gap is not None else "disabled")
+    )
+    console.print(
+        "Bottom-five attack vs top-five defense rule: "
+        + ("enabled" if result["use_ranking_rule"] else "disabled")
+    )
+    console.print(
+        f"Validation accuracy of selected rule: "
+        f"{result['validation_rule_accuracy']:.4f}"
     )
     console.print(
         f"Average scoring-probability gap: {result['average_gap'] * 100:.2f}%"
@@ -425,6 +459,23 @@ def train_team_scoring():
     )
     console.print(f"Predicted BTTS No: {result['predicted_btts_no']}")
     console.print(f"Predicted BTTS Yes: {result['predicted_btts_yes']}")
+    if result["latest_season_accuracy"] is not None:
+        console.print(
+            f"{result['latest_season']} recalibrated-rule accuracy: "
+            f"{result['latest_season_accuracy']:.4f} "
+            f"({result['latest_season_correct']}/"
+            f"{result['latest_season_matches']})"
+        )
+        console.print(
+            f"{result['latest_season']} legacy-rule accuracy: "
+            f"{result['latest_season_legacy_accuracy']:.4f} "
+            f"({result['latest_season_legacy_correct']}/"
+            f"{result['latest_season_matches']})"
+        )
+        console.print(
+            f"{result['latest_season']} hindsight-majority accuracy: "
+            f"{result['latest_season_majority_accuracy']:.4f}"
+        )
     console.print(
         f"Home probability range: {result['home_probability_min'] * 100:.2f}% "
         f"to {result['home_probability_max'] * 100:.2f}%"
@@ -435,6 +486,7 @@ def train_team_scoring():
     )
     console.print(f"Home model saved to: {result['home_model_path']}")
     console.print(f"Away model saved to: {result['away_model_path']}")
+    console.print(f"Predictions saved to: {result['predictions_path']}")
     console.print("")
     console.print(result["classification_report"])
 

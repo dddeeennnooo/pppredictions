@@ -70,6 +70,13 @@
         <article><span>02</span><p><strong>Lock ten calls</strong>The AI cannot change its predictions after kickoff.</p></article>
         <article><span>03</span><p><strong>Teach the machine</strong>Win the round and your edge recalibrates its next challenge.</p></article>
       </div>
+      <section class="recent-rounds hidden" id="recent-rounds">
+        <div class="recent-rounds-heading">
+          <div><p class="eyebrow">YOUR MATCH NOTES</p><h2>Review recent rounds</h2></div>
+          <p>Write one review per match to add your football reasoning to the learning record.</p>
+        </div>
+        <div id="recent-round-list"></div>
+      </section>
     </section>
 
     <section id="game" class="screen game-screen hidden">
@@ -176,8 +183,52 @@
         <div class="learning-value"><span id="learning-before"></span><i>→</i><strong id="learning-after"></strong></div>
       </div>
       <div class="result-actions">
-        <button class="secondary-button" id="review-button">REVIEW PICKS</button>
+        <button class="secondary-button" id="review-button">WRITE MATCH REVIEWS</button>
         <button class="primary-button" id="again-button"><span>PLAY ANOTHER ROUND</span><b>↗</b></button>
+      </div>
+    </section>
+
+    <section id="review" class="screen review-screen hidden">
+      <div class="review-header">
+        <button class="text-button" id="review-back">← Back to result</button>
+        <p class="eyebrow">HUMAN FACTOR</p>
+        <h2>Add your match notes.</h2>
+        <p>Your explanation is stored with the prediction. Complete all ten reviews to contribute this round to the adaptive model.</p>
+      </div>
+      <div class="review-progress"><i id="review-progress-bar"></i></div>
+      <div class="review-layout">
+        <aside class="review-list-panel">
+          <div class="review-list-heading"><span>MATCHES</span><strong id="review-count">0 / 10</strong></div>
+          <div id="review-match-list"></div>
+        </aside>
+        <section class="review-form-card">
+          <div class="review-fixture-meta"><span id="review-league"></span><span id="review-position"></span></div>
+          <div class="review-scoreline">
+            <div><small>HOME</small><strong id="review-home"></strong></div>
+            <b id="review-score"></b>
+            <div><small>AWAY</small><strong id="review-away"></strong></div>
+          </div>
+          <div class="review-comparison">
+            <div><span>YOUR CALL</span><strong id="review-human-pick"></strong></div>
+            <div><span>MODEL CALL</span><strong id="review-ai-pick"></strong></div>
+          </div>
+          <form id="review-form">
+            <fieldset>
+              <legend>What was the main human factor?</legend>
+              <div class="factor-options" id="factor-options"></div>
+            </fieldset>
+            <label class="review-text-label" for="review-text">What did you notice?</label>
+            <textarea id="review-text" minlength="10" maxlength="2000" rows="7" placeholder="Explain the form, tactical detail, team context, or intuition behind your call…" required></textarea>
+            <div class="review-form-footer">
+              <span id="review-character-count">0 / 2,000</span>
+              <button class="primary-button" id="save-review-button" type="submit"><span>SAVE &amp; NEXT MATCH</span><b>→</b></button>
+            </div>
+          </form>
+        </section>
+      </div>
+      <div class="review-complete-card hidden" id="review-complete-card">
+        <span>✓</span><div><strong>All ten reviews are saved.</strong><p id="review-learning-message"></p></div>
+        <button class="secondary-button" id="review-result-button">VIEW ROUND RESULT</button>
       </div>
     </section>
   </main>

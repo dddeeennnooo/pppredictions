@@ -33,8 +33,16 @@ No Node installation or additional Python package is required.
 - Results, AI picks, and AI confidence stay server-side until all ten human picks are
   locked and the round is revealed.
 - A correct prediction is worth one point. Exact-score mode has no partial credit.
-- If the human wins the round, unique fixtures where the human was correct and the AI
-  was wrong become learning examples. A fixture is never learned twice.
+- After the result, the review workspace requires a written note and one human-factor
+  category for each match: recent form, tactical matchup, squad availability, venue,
+  motivation/context, or football intuition. Reviews may be saved and edited one at
+  a time. The lobby lists recent rounds and their review progress, so an unfinished
+  review remains accessible after a refresh or server restart.
+- If the human wins the round, recalibration waits until all ten reviews are complete.
+  Unique fixtures where the human was correct and the AI was wrong then become learning
+  examples with the written reasoning and factor attached. A fixture is never learned
+  twice. Reviews from tied or lost rounds are retained as human context without changing
+  the numeric calibration.
 
 For BTTS, human-edge examples shift the model's decision threshold by at most eight
 percentage points. For exact scores, they apply capped home/away goal corrections.
@@ -43,6 +51,9 @@ are stored in the existing SQLite database. `web_game_rounds` stores the selecte
 league, locked AI picks, human picks, scores, and calibration snapshots.
 `web_game_results` stores one row per fixture per completed round, including both
 predictions, the actual score and outcome, correctness flags, and completion time.
+`web_game_reviews` stores the human-factor category, written review, and submission
+time for every reviewed fixture. Reviewed winning edges copy that context into
+`web_learning_examples`, keeping the qualitative reason beside the numeric signal.
 All ten result rows and the round totals are saved in one transaction, including
 losing and tied rounds. Repeated reveal requests do not duplicate results. Saved
 scores survive later corrections to historical match data. `web_learning_examples`
@@ -58,6 +69,19 @@ The API requires a `competition` code when creating a round, for example:
 
 `GET /api/meta` lists eligible leagues and seasons. Restart the server after updating
 the application to load the new routes and apply the additive database migration.
+
+Save or edit one match review with:
+
+```http
+POST /api/rounds/{round_id}/reviews
+Content-Type: application/json
+
+{
+  "match_id": 123,
+  "factor": "tactics",
+  "review": "The narrow midfield matchup made chances for both teams likely."
+}
+```
 
 The BTTS opponent uses `weekly_btts_predictions_2025_2026.csv` when present. If that
 artifact is unavailable, Touchline selects the latest complete matchweek season and
